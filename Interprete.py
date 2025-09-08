@@ -4,37 +4,26 @@ import operator
 # =============================
 # Lexer
 # =============================
-
 def tokenize(code):
-    # Remove comments
     code = re.sub(r'#.*', '', code)
-    # Token regex
-    token_spec = r'\".*?\"|\'.*?\'|\bdef\b|\bif\b|\belse\b|\bwhile\b|True|False|and|or|not|[A-Za-z_]\w*|\d+\.\d+|\d+|==|!=|<=|>=|[+\-*/%=<>(){},:]'
+    token_spec = r'\".*?\"|\'.*?\'|\bdef\b|\bif\b|\belse\b|\bwhile\b|return|True|False|and|or|not|[A-Za-z_]\w*|\d+\.\d+|\d+|==|!=|<=|>=|[+\-*/%=<>(){},:]'
     tokens = re.findall(token_spec, code)
     return [tok for tok in tokens if tok.strip() != '']
 
 # =============================
 # Parser (Shunting Yard for expr)
 # =============================
-
 precedence = {
-    'or': 1,
-    'and': 2,
-    'not': 3,
+    'or': 1, 'and': 2, 'not': 3,
     '==': 4, '!=': 4, '>': 4, '<': 4,
-    '+': 5, '-': 5,
-    '*': 6, '/': 6, '%': 6,
+    '+': 5, '-': 5, '*': 6, '/': 6, '%': 6,
 }
-
 right_assoc = {'not'}
 
 def shunting_yard(tokens):
-    output = []
-    stack = []
-    i = 0
-    while i < len(tokens):
-        tok = tokens[i]
-        if re.match(r'\d+\.\d+|\d+', tok) or re.match(r'\".*\"|\'.*\'', tok) or tok in ['True', 'False'] or re.match(r'[A-Za-z_]\w*', tok):
+    output, stack = [], []
+    for tok in tokens:
+        if re.match(r'\d+\.\d+|\d+', tok) or re.match(r'\".*\"|\'.*\'', tok) or tok in ['True','False'] or re.match(r'[A-Za-z_]\w*', tok):
             output.append(tok)
         elif tok in precedence:
             while stack and stack[-1] in precedence and (
@@ -51,7 +40,6 @@ def shunting_yard(tokens):
             stack.pop()
         else:
             output.append(tok)
-        i += 1
     while stack:
         output.append(stack.pop())
     return output
@@ -71,11 +59,9 @@ def parse_primary(token):
 def build_ast(rpn):
     stack = []
     ops = {
-        '+': operator.add, '-': operator.sub,
-        '*': operator.mul, '/': operator.truediv, '%': operator.mod,
+        '+': operator.add, '-': operator.sub, '*': operator.mul, '/': operator.truediv, '%': operator.mod,
         '==': operator.eq, '!=': operator.ne, '>': operator.gt, '<': operator.lt,
-        'and': lambda x, y: x and y, 'or': lambda x, y: x or y,
-        'not': lambda x: not x
+        'and': lambda x,y:x and y, 'or': lambda x,y:x or y, 'not': lambda x: not x
     }
     for tok in rpn:
         if tok in ops:
@@ -91,15 +77,13 @@ def build_ast(rpn):
     return stack[0] if stack else None
 
 # =============================
-# Statement Parser (if/while/def)
+# Statements
 # =============================
-
 def parse_block(lines, start):
     block = []
     indent = None
     for i in range(start, len(lines)):
-        if not lines[i].strip():
-            continue
+        if not lines[i].strip(): continue
         curr_indent = len(lines[i]) - len(lines[i].lstrip())
         if indent is None:
             indent = curr_indent
@@ -141,6 +125,9 @@ def parse_statements(lines):
             stmts.append(('else', block))
             i = next_i
             continue
+        elif line.startswith('return'):
+            expr = line[6:].strip()
+            stmts.append(('return', expr))
         else:
             stmts.append(('expr', line))
         i += 1
@@ -149,13 +136,14 @@ def parse_statements(lines):
 # =============================
 # Environment / Funciones
 # =============================
-
 class Environment(dict):
     def __init__(self, parent=None):
         super().__init__()
         self.parent = parent
     def get(self, key):
-        return self[key] if key in self else (self.parent.get(key) if self.parent else None)
+        if key in self: return self[key]
+        if self.parent: return self.parent.get(key)
+        return None
     def set(self, key, value):
         self[key] = value
 
@@ -174,7 +162,7 @@ def eval_expr_ast(ast, env):
             '+': operator.add, '-': operator.sub, '*': operator.mul,
             '/': operator.truediv, '%': operator.mod,
             '==': operator.eq, '!=': operator.ne, '>': operator.gt, '<': operator.lt,
-            'and': lambda x, y: x and y, 'or': lambda x, y: x or y
+            'and': lambda x,y:x and y, 'or': lambda x,y:x or y
         }
         return ops[op](left, right)
     elif isinstance(ast, str):
@@ -190,18 +178,15 @@ def evaluate(stmt, env):
         line = stmt[1]
         if '=' in line:
             var, expr = line.split('=', 1)
-            var = var.strip()
-            expr = expr.strip()
+            var, expr = var.strip(), expr.strip()
             toks = tokenize(expr)
             rpn = shunting_yard(toks)
             ast = build_ast(rpn)
             val = eval_expr_ast(ast, env)
             env.set(var, val)
-            return None
         elif re.match(r'[A-Za-z_]\w*\(.*\)', line):
             m = re.match(r'([A-Za-z_]\w*)\((.*?)\)', line)
-            fname = m.group(1)
-            args = [a.strip() for a in m.group(2).split(',') if a.strip()]
+            fname, args = m.group(1), [a.strip() for a in m.group(2).split(',') if a.strip()]
             if fname == 'print':
                 vals = []
                 for arg in args:
@@ -210,10 +195,6 @@ def evaluate(stmt, env):
                     ast = build_ast(rpn)
                     vals.append(eval_expr_ast(ast, env))
                 print(*vals)
-                return None
-            elif fname == 'input':
-                prompt = args[0] if args else ''
-                return input(prompt)
             elif fname in functions:
                 fdef = functions[fname]
                 local_env = Environment(env)
@@ -222,39 +203,33 @@ def evaluate(stmt, env):
                     rpn = shunting_yard(toks)
                     ast = build_ast(rpn)
                     local_env.set(p, eval_expr_ast(ast, env))
-                for s in fdef['body']:
+                for s in parse_statements(fdef['body']):
                     res = evaluate(s, local_env)
+                    if s[0] == 'return':
+                        return res
                     if res is not None:
                         return res
             else:
                 raise NameError(f"Función '{fname}' no definida")
-        else:
-            toks = tokenize(line)
-            rpn = shunting_yard(toks)
-            ast = build_ast(rpn)
-            val = eval_expr_ast(ast, env)
-            return val
     elif stmt[0] == 'def':
         _, name, params, block = stmt
-        fbody = parse_statements(block)
-        functions[name] = {'params': params, 'body': fbody}
-        return None
+        functions[name] = {'params': params, 'body': block}
     elif stmt[0] == 'if':
         _, cond, block = stmt
         toks = tokenize(cond)
         rpn = shunting_yard(toks)
         ast = build_ast(rpn)
         if eval_expr_ast(ast, env):
-            body = parse_statements(block)
-            for s in body:
-                evaluate(s, env)
-        return None
+            for s in parse_statements(block):
+                res = evaluate(s, env)
+                if res is not None:
+                    return res
     elif stmt[0] == 'else':
         _, block = stmt
-        body = parse_statements(block)
-        for s in body:
-            evaluate(s, env)
-        return None
+        for s in parse_statements(block):
+            res = evaluate(s, env)
+            if res is not None:
+                return res
     elif stmt[0] == 'while':
         _, cond, block = stmt
         while True:
@@ -262,29 +237,27 @@ def evaluate(stmt, env):
             rpn = shunting_yard(toks)
             ast = build_ast(rpn)
             if eval_expr_ast(ast, env):
-                body = parse_statements(block)
-                for s in body:
-                    evaluate(s, env)
+                for s in parse_statements(block):
+                    res = evaluate(s, env)
+                    if res is not None:
+                        return res
             else:
                 break
-        return None
+    elif stmt[0] == 'return':
+        expr = stmt[1]
+        toks = tokenize(expr)
+        rpn = shunting_yard(toks)
+        ast = build_ast(rpn)
+        return eval_expr_ast(ast, env)
 
 def handle_error(e):
-    if isinstance(e, SyntaxError):
-        print(f"SyntaxError: {e}")
-    elif isinstance(e, NameError):
-        print(f"NameError: {e}")
-    elif isinstance(e, ZeroDivisionError):
-        print(f"ZeroDivisionError: {e}")
-    else:
-        print(f"Error: {e}")
+    print(f"{type(e).__name__}: {e}")
 
 # =============================
 # REPL
 # =============================
-
 def main():
-    print("Mini intérprete tipo Python avanzado. Escribe código, Ctrl+C para salir.")
+    print("Mini intérprete tipo Python. Ctrl+C para salir.")
     env = Environment()
     buffer = []
     while True:
@@ -295,9 +268,7 @@ def main():
                     stmts = parse_statements(buffer)
                     for stmt in stmts:
                         try:
-                            res = evaluate(stmt, env)
-                            if res is not None:
-                                print(res)
+                            evaluate(stmt, env)
                         except Exception as e:
                             handle_error(e)
                     buffer = []
