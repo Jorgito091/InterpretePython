@@ -1,285 +1,362 @@
-import re
+import ast
 import operator
+import sys
+from typing import Any, Dict, List, Optional
 
-# =============================
-# Lexer
-# =============================
-def tokenize(code):
-    code = re.sub(r'#.*', '', code)
-    token_spec = r'\".*?\"|\'.*?\'|\bdef\b|\bif\b|\belse\b|\bwhile\b|return|True|False|and|or|not|[A-Za-z_]\w*|\d+\.\d+|\d+|==|!=|<=|>=|[+\-*/%=<>(){},:]'
-    tokens = re.findall(token_spec, code)
-    return [tok for tok in tokens if tok.strip() != '']
-
-# =============================
-# Parser (Shunting Yard for expr)
-# =============================
-precedence = {
-    'or': 1, 'and': 2, 'not': 3,
-    '==': 4, '!=': 4, '>': 4, '<': 4,
-    '+': 5, '-': 5, '*': 6, '/': 6, '%': 6,
-}
-right_assoc = {'not'}
-
-def shunting_yard(tokens):
-    output, stack = [], []
-    for tok in tokens:
-        if re.match(r'\d+\.\d+|\d+', tok) or re.match(r'\".*\"|\'.*\'', tok) or tok in ['True','False'] or re.match(r'[A-Za-z_]\w*', tok):
-            output.append(tok)
-        elif tok in precedence:
-            while stack and stack[-1] in precedence and (
-                (tok not in right_assoc and precedence[tok] <= precedence[stack[-1]]) or
-                (tok in right_assoc and precedence[tok] < precedence[stack[-1]])
-            ):
-                output.append(stack.pop())
-            stack.append(tok)
-        elif tok == '(':
-            stack.append(tok)
-        elif tok == ')':
-            while stack and stack[-1] != '(':
-                output.append(stack.pop())
-            stack.pop()
-        else:
-            output.append(tok)
-    while stack:
-        output.append(stack.pop())
-    return output
-
-def parse_primary(token):
-    if re.match(r'^\d+\.\d+$', token):
-        return float(token)
-    elif re.match(r'^\d+$', token):
-        return int(token)
-    elif token in ('True', 'False'):
-        return token == 'True'
-    elif re.match(r'^\".*\"|\'.*\'$', token):
-        return token[1:-1]
-    else:
-        return token
-
-def build_ast(rpn):
-    stack = []
-    ops = {
-        '+': operator.add, '-': operator.sub, '*': operator.mul, '/': operator.truediv, '%': operator.mod,
-        '==': operator.eq, '!=': operator.ne, '>': operator.gt, '<': operator.lt,
-        'and': lambda x,y:x and y, 'or': lambda x,y:x or y, 'not': lambda x: not x
-    }
-    for tok in rpn:
-        if tok in ops:
-            if tok == 'not':
-                val = stack.pop()
-                stack.append(('not', val))
-            else:
-                right = stack.pop()
-                left = stack.pop()
-                stack.append((tok, left, right))
-        else:
-            stack.append(parse_primary(tok))
-    return stack[0] if stack else None
-
-# =============================
-# Statements
-# =============================
-def parse_block(lines, start):
-    block = []
-    indent = None
-    for i in range(start, len(lines)):
-        if not lines[i].strip(): continue
-        curr_indent = len(lines[i]) - len(lines[i].lstrip())
-        if indent is None:
-            indent = curr_indent
-        elif curr_indent < indent:
-            break
-        block.append(lines[i][indent:])
-    return block, i
-
-def parse_statements(lines):
-    i = 0
-    stmts = []
-    while i < len(lines):
-        line = lines[i].strip()
-        if not line or line.startswith('#'):
-            i += 1
-            continue
-        if line.startswith('def '):
-            m = re.match(r'def\s+([A-Za-z_]\w*)\((.*?)\):', line)
-            name = m.group(1)
-            params = [p.strip() for p in m.group(2).split(',') if p.strip()]
-            block, next_i = parse_block(lines, i+1)
-            stmts.append(('def', name, params, block))
-            i = next_i
-            continue
-        elif line.startswith('if '):
-            cond = line[3:line.index(':')].strip()
-            block, next_i = parse_block(lines, i+1)
-            stmts.append(('if', cond, block))
-            i = next_i
-            continue
-        elif line.startswith('while '):
-            cond = line[6:line.index(':')].strip()
-            block, next_i = parse_block(lines, i+1)
-            stmts.append(('while', cond, block))
-            i = next_i
-            continue
-        elif line.startswith('else:'):
-            block, next_i = parse_block(lines, i+1)
-            stmts.append(('else', block))
-            i = next_i
-            continue
-        elif line.startswith('return'):
-            expr = line[6:].strip()
-            stmts.append(('return', expr))
-        else:
-            stmts.append(('expr', line))
-        i += 1
-    return stmts
-
-# =============================
-# Environment / Funciones
-# =============================
-class Environment(dict):
-    def __init__(self, parent=None):
-        super().__init__()
-        self.parent = parent
-    def get(self, key):
-        if key in self: return self[key]
-        if self.parent: return self.parent.get(key)
-        return None
-    def set(self, key, value):
-        self[key] = value
-
-functions = {}
-
-def eval_expr_ast(ast, env):
-    if isinstance(ast, tuple):
-        op = ast[0]
-        if op == 'not':
-            return not eval_expr_ast(ast[1], env)
-        left = eval_expr_ast(ast[1], env)
-        right = eval_expr_ast(ast[2], env)
-        if op == '/' and right == 0:
-            raise ZeroDivisionError("División por cero")
-        ops = {
-            '+': operator.add, '-': operator.sub, '*': operator.mul,
-            '/': operator.truediv, '%': operator.mod,
-            '==': operator.eq, '!=': operator.ne, '>': operator.gt, '<': operator.lt,
-            'and': lambda x,y:x and y, 'or': lambda x,y:x or y
+class PythonInterpreter:
+    def __init__(self):
+        self.variables = {}
+        self.functions = {}
+        self.builtin_functions = {
+            'print': self._builtin_print,
+            'len': len,
+            'str': str,
+            'int': int,
+            'float': float,
+            'bool': bool,
+            'type': type,
+            'abs': abs,
+            'max': max,
+            'min': min,
+            'sum': sum,
+            'range': range,
+            'list': list,
+            'dict': dict,
+            'set': set,
+            'tuple': tuple,
         }
-        return ops[op](left, right)
-    elif isinstance(ast, str):
-        val = env.get(ast)
-        if val is None:
-            raise NameError(f"Variable '{ast}' no definida")
-        return val
-    else:
-        return ast
+        
+        # Operadores binarios
+        self.binary_ops = {
+            ast.Add: operator.add,
+            ast.Sub: operator.sub,
+            ast.Mult: operator.mul,
+            ast.Div: operator.truediv,
+            ast.FloorDiv: operator.floordiv,
+            ast.Mod: operator.mod,
+            ast.Pow: operator.pow,
+            ast.LShift: operator.lshift,
+            ast.RShift: operator.rshift,
+            ast.BitOr: operator.or_,
+            ast.BitXor: operator.xor,
+            ast.BitAnd: operator.and_,
+        }
+        
+        # Operadores de comparación
+        self.compare_ops = {
+            ast.Eq: operator.eq,
+            ast.NotEq: operator.ne,
+            ast.Lt: operator.lt,
+            ast.LtE: operator.le,
+            ast.Gt: operator.gt,
+            ast.GtE: operator.ge,
+            ast.Is: operator.is_,
+            ast.IsNot: operator.is_not,
+            ast.In: lambda x, y: x in y,
+            ast.NotIn: lambda x, y: x not in y,
+        }
+        
+        # Operadores unarios
+        self.unary_ops = {
+            ast.UAdd: operator.pos,
+            ast.USub: operator.neg,
+            ast.Not: operator.not_,
+            ast.Invert: operator.invert,
+        }
+        
+        # Operadores booleanos
+        self.bool_ops = {
+            ast.And: lambda x, y: x and y,
+            ast.Or: lambda x, y: x or y,
+        }
 
-def evaluate(stmt, env):
-    if stmt[0] == 'expr':
-        line = stmt[1]
-        if '=' in line:
-            var, expr = line.split('=', 1)
-            var, expr = var.strip(), expr.strip()
-            toks = tokenize(expr)
-            rpn = shunting_yard(toks)
-            ast = build_ast(rpn)
-            val = eval_expr_ast(ast, env)
-            env.set(var, val)
-        elif re.match(r'[A-Za-z_]\w*\(.*\)', line):
-            m = re.match(r'([A-Za-z_]\w*)\((.*?)\)', line)
-            fname, args = m.group(1), [a.strip() for a in m.group(2).split(',') if a.strip()]
-            if fname == 'print':
-                vals = []
-                for arg in args:
-                    toks = tokenize(arg)
-                    rpn = shunting_yard(toks)
-                    ast = build_ast(rpn)
-                    vals.append(eval_expr_ast(ast, env))
-                print(*vals)
-            elif fname in functions:
-                fdef = functions[fname]
-                local_env = Environment(env)
-                for p, v in zip(fdef['params'], args):
-                    toks = tokenize(v)
-                    rpn = shunting_yard(toks)
-                    ast = build_ast(rpn)
-                    local_env.set(p, eval_expr_ast(ast, env))
-                for s in parse_statements(fdef['body']):
-                    res = evaluate(s, local_env)
-                    if s[0] == 'return':
-                        return res
-                    if res is not None:
-                        return res
+    def _builtin_print(self, *args, **kwargs):
+        """Función print personalizada"""
+        sep = kwargs.get('sep', ' ')
+        end = kwargs.get('end', '\n')
+        output = sep.join(str(arg) for arg in args) + end
+        print(output, end='')
+        return None
+
+    def interpret(self, code: str) -> Any:
+        """Interpreta código Python"""
+        try:
+            tree = ast.parse(code, mode='exec')
+            return self.visit(tree)
+        except SyntaxError as e:
+            return f"Error de sintaxis: {e}"
+        except Exception as e:
+            return f"Error de ejecución: {e}"
+
+    def visit(self, node: ast.AST) -> Any:
+        """Visita un nodo del AST"""
+        method_name = f'visit_{type(node).__name__}'
+        method = getattr(self, method_name, self.generic_visit)
+        return method(node)
+
+    def generic_visit(self, node: ast.AST) -> Any:
+        """Método genérico para nodos no implementados"""
+        raise NotImplementedError(f"Nodo {type(node).__name__} no implementado")
+
+    # Visitadores para diferentes tipos de nodos
+    
+    def visit_Module(self, node: ast.Module) -> Any:
+        """Visita el módulo principal"""
+        result = None
+        for stmt in node.body:
+            result = self.visit(stmt)
+        return result
+
+    def visit_Expr(self, node: ast.Expr) -> Any:
+        """Visita una expresión"""
+        return self.visit(node.value)
+
+    def visit_Assign(self, node: ast.Assign) -> Any:
+        """Maneja asignaciones"""
+        value = self.visit(node.value)
+        for target in node.targets:
+            if isinstance(target, ast.Name):
+                self.variables[target.id] = value
             else:
-                raise NameError(f"Función '{fname}' no definida")
-    elif stmt[0] == 'def':
-        _, name, params, block = stmt
-        functions[name] = {'params': params, 'body': block}
-    elif stmt[0] == 'if':
-        _, cond, block = stmt
-        toks = tokenize(cond)
-        rpn = shunting_yard(toks)
-        ast = build_ast(rpn)
-        if eval_expr_ast(ast, env):
-            for s in parse_statements(block):
-                res = evaluate(s, env)
-                if res is not None:
-                    return res
-    elif stmt[0] == 'else':
-        _, block = stmt
-        for s in parse_statements(block):
-            res = evaluate(s, env)
-            if res is not None:
-                return res
-    elif stmt[0] == 'while':
-        _, cond, block = stmt
-        while True:
-            toks = tokenize(cond)
-            rpn = shunting_yard(toks)
-            ast = build_ast(rpn)
-            if eval_expr_ast(ast, env):
-                for s in parse_statements(block):
-                    res = evaluate(s, env)
-                    if res is not None:
-                        return res
-            else:
-                break
-    elif stmt[0] == 'return':
-        expr = stmt[1]
-        toks = tokenize(expr)
-        rpn = shunting_yard(toks)
-        ast = build_ast(rpn)
-        return eval_expr_ast(ast, env)
+                raise NotImplementedError("Solo se soportan asignaciones simples")
+        return value
 
-def handle_error(e):
-    print(f"{type(e).__name__}: {e}")
+    def visit_AugAssign(self, node: ast.AugAssign) -> Any:
+        """Maneja asignaciones aumentadas (+=, -=, etc.)"""
+        target_value = self.visit(node.target)
+        value = self.visit(node.value)
+        op = self.binary_ops[type(node.op)]
+        result = op(target_value, value)
+        
+        if isinstance(node.target, ast.Name):
+            self.variables[node.target.id] = result
+        else:
+            raise NotImplementedError("Solo se soportan asignaciones aumentadas simples")
+        return result
 
-# =============================
-# REPL
-# =============================
-def main():
-    print("Mini intérprete tipo Python. Ctrl+C para salir.")
-    env = Environment()
-    buffer = []
+    def visit_Name(self, node: ast.Name) -> Any:
+        """Visita nombres de variables"""
+        if node.id in self.variables:
+            return self.variables[node.id]
+        elif node.id in self.builtin_functions:
+            return self.builtin_functions[node.id]
+        elif node.id in self.functions:
+            return self.functions[node.id]
+        else:
+            raise NameError(f"Variable '{node.id}' no definida")
+
+    def visit_Constant(self, node: ast.Constant) -> Any:
+        """Visita constantes (números, strings, etc.)"""
+        return node.value
+
+    def visit_BinOp(self, node: ast.BinOp) -> Any:
+        """Maneja operaciones binarias"""
+        left = self.visit(node.left)
+        right = self.visit(node.right)
+        op = self.binary_ops[type(node.op)]
+        return op(left, right)
+
+    def visit_UnaryOp(self, node: ast.UnaryOp) -> Any:
+        """Maneja operaciones unarias"""
+        operand = self.visit(node.operand)
+        op = self.unary_ops[type(node.op)]
+        return op(operand)
+
+    def visit_Compare(self, node: ast.Compare) -> Any:
+        """Maneja comparaciones"""
+        left = self.visit(node.left)
+        for op, comparator in zip(node.ops, node.comparators):
+            right = self.visit(comparator)
+            op_func = self.compare_ops[type(op)]
+            if not op_func(left, right):
+                return False
+            left = right
+        return True
+
+    def visit_BoolOp(self, node: ast.BoolOp) -> Any:
+        """Maneja operaciones booleanas (and, or)"""
+        op_func = self.bool_ops[type(node.op)]
+        result = self.visit(node.values[0])
+        
+        for value in node.values[1:]:
+            if isinstance(node.op, ast.And) and not result:
+                return result
+            elif isinstance(node.op, ast.Or) and result:
+                return result
+            result = op_func(result, self.visit(value))
+        
+        return result
+
+    def visit_Call(self, node: ast.Call) -> Any:
+        """Maneja llamadas a funciones"""
+        func = self.visit(node.func)
+        args = [self.visit(arg) for arg in node.args]
+        kwargs = {kw.arg: self.visit(kw.value) for kw in node.keywords}
+        
+        if callable(func):
+            return func(*args, **kwargs)
+        else:
+            raise TypeError(f"'{func}' no es una función")
+
+    def visit_If(self, node: ast.If) -> Any:
+        """Maneja estructuras if-elif-else"""
+        test = self.visit(node.test)
+        if test:
+            result = None
+            for stmt in node.body:
+                result = self.visit(stmt)
+            return result
+        elif node.orelse:
+            result = None
+            for stmt in node.orelse:
+                result = self.visit(stmt)
+            return result
+        return None
+
+    def visit_While(self, node: ast.While) -> Any:
+        """Maneja bucles while"""
+        result = None
+        while self.visit(node.test):
+            for stmt in node.body:
+                result = self.visit(stmt)
+        return result
+
+    def visit_For(self, node: ast.For) -> Any:
+        """Maneja bucles for"""
+        result = None
+        iterable = self.visit(node.iter)
+        
+        for item in iterable:
+            if isinstance(node.target, ast.Name):
+                self.variables[node.target.id] = item
+            for stmt in node.body:
+                result = self.visit(stmt)
+        return result
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> Any:
+        """Define funciones"""
+        def user_function(*args, **kwargs):
+            # Crear nuevo contexto para la función
+            old_vars = self.variables.copy()
+            
+            # Asignar argumentos
+            for i, arg in enumerate(node.args.args):
+                if i < len(args):
+                    self.variables[arg.arg] = args[i]
+                else:
+                    # Manejar argumentos por defecto si los hay
+                    self.variables[arg.arg] = None
+            
+            # Ejecutar cuerpo de la función
+            result = None
+            try:
+                for stmt in node.body:
+                    result = self.visit(stmt)
+            except ReturnValue as ret:
+                result = ret.value
+            finally:
+                # Restaurar contexto anterior
+                self.variables = old_vars
+            
+            return result
+        
+        self.functions[node.name] = user_function
+        return user_function
+
+    def visit_Return(self, node: ast.Return) -> Any:
+        """Maneja declaraciones return"""
+        value = self.visit(node.value) if node.value else None
+        raise ReturnValue(value)
+
+    def visit_List(self, node: ast.List) -> List[Any]:
+        """Maneja listas"""
+        return [self.visit(item) for item in node.elts]
+
+    def visit_Dict(self, node: ast.Dict) -> Dict[Any, Any]:
+        """Maneja diccionarios"""
+        result = {}
+        for key, value in zip(node.keys, node.values):
+            k = self.visit(key)
+            v = self.visit(value)
+            result[k] = v
+        return result
+
+    def visit_Subscript(self, node: ast.Subscript) -> Any:
+        """Maneja acceso por índice o slice"""
+        value = self.visit(node.value)
+        slice_value = self.visit(node.slice)
+        return value[slice_value]
+
+class ReturnValue(Exception):
+    """Excepción para manejar return en funciones"""
+    def __init__(self, value):
+        self.value = value
+
+# Función principal para usar el intérprete
+def run_interpreter():
+    """Ejecuta el intérprete en modo interactivo"""
+    interpreter = PythonInterpreter()
+    print("Intérprete básico de Python")
+    print("Escribe 'exit()' para salir")
+    print("-" * 30)
+    
     while True:
         try:
-            line = input(">>> " if not buffer else "... ")
-            if line.strip() == "":
-                if buffer:
-                    stmts = parse_statements(buffer)
-                    for stmt in stmts:
-                        try:
-                            evaluate(stmt, env)
-                        except Exception as e:
-                            handle_error(e)
-                    buffer = []
-                continue
-            buffer.append(line)
+            code = input(">>> ")
+            if code.strip() == "exit()":
+                break
+            elif code.strip():
+                result = interpreter.interpret(code)
+                if result is not None:
+                    print(repr(result))
         except KeyboardInterrupt:
-            print("\nSaliendo.")
+            print("\nSaliendo...")
             break
-        except Exception as e:
-            handle_error(e)
-            buffer = []
+        except EOFError:
+            break
 
+# Ejemplo de uso
 if __name__ == "__main__":
-    main()
+    # Crear intérprete
+    interpreter = PythonInterpreter()
+    
+    # Ejemplos de código para probar
+    ejemplos = [
+        "x = 5",
+        "y = 10",
+        "print(x + y)",
+        "z = x * y",
+        "print('El resultado es:', z)",
+        """
+def factorial(n):
+    if n <= 1:
+        return 1
+    else:
+        return n * factorial(n - 1)
+""",
+        "print(factorial(5))",
+        """
+lista = [1, 2, 3, 4, 5]
+for i in lista:
+    print(i * 2)
+""",
+        """
+if z > 30:
+    print('z es mayor que 30')
+else:
+    print('z es menor o igual que 30')
+""",
+    ]
+    
+    print("=== Ejecutando ejemplos ===")
+    for i, codigo in enumerate(ejemplos, 1):
+        print(f"\nEjemplo {i}:")
+        print(f"Código: {codigo.strip()}")
+        print("Salida:")
+        result = interpreter.interpret(codigo)
+        if result is not None:
+            print(f"Resultado: {result}")
+    
+    print("\n" + "="*50)
+    print("Para usar el intérprete interactivo, ejecuta:")
+    print("run_interpreter()")
