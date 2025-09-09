@@ -5,38 +5,42 @@
 ## Características principales
 
 - **Parseo y análisis léxico**: Convierte el código fuente en tokens que pueden ser procesados por el intérprete.
-- **Evaluación de expresiones**: Soporta operaciones aritméticas, asignaciones, y el manejo de variables.
-- **Ejecución de instrucciones**: Permite ejecutar sentencias simples y compuestas, como condicionales (`if`, `else`), bucles (`while`, `for`), y funciones definidas por el usuario.
+- **Evaluación de expresiones**: Soporta operaciones aritméticas, asignaciones y el manejo de variables.
+- **Ejecución de instrucciones**: Permite ejecutar sentencias simples y compuestas, como condicionales (`if`, `else`), bucles (`while`, `for`) y funciones definidas por el usuario.
 - **Gestión de errores**: Informa sobre errores de sintaxis y ejecución para facilitar el debug del código interpretado.
 - **Extensibilidad**: El diseño modular permite agregar nuevas funcionalidades y ampliar el lenguaje interpretado.
 
-## ¿Cómo funciona?
+## ¿Cómo funciona el intérprete?
 
-El intérprete toma un archivo de texto (`.py`) o una cadena con código Python, lo analiza y ejecuta línea por línea, simulando el comportamiento de Python. Provee un entorno seguro y controlado para experimentar con código Python, ideal para propósitos educativos y pruebas.
+El intérprete está compuesto por varias etapas y módulos principales que juntos permiten analizar y ejecutar código Python. A continuación se explica su lógica interna:
 
-### Flujo básico
+### 1. **Tokenización (Análisis léxico)**
+El código fuente se convierte en una secuencia de *tokens*, que son las unidades mínimas significativas (palabras clave, operadores, literales, etc.). Este proceso permite separar y identificar cada elemento del código para su posterior análisis.
 
-1. **Entrada de código**: El usuario proporciona el código a interpretar.
-2. **Tokenización**: El código se divide en tokens reconocibles.
-3. **Parseo**: Los tokens se estructuran en un árbol de sintaxis abstracta (AST).
-4. **Ejecución**: El AST se recorre y se ejecutan las instrucciones correspondientes.
+### 2. **Parseo (Análisis sintáctico)**
+Los tokens generados se agrupan siguiendo las reglas del lenguaje Python y se estructuran en un Árbol de Sintaxis Abstracta (AST). El AST representa la jerarquía de las operaciones y sentencias, facilitando su interpretación.
+
+### 3. **Evaluación y ejecución**
+El intérprete recorre el AST y evalúa cada nodo según su tipo:
+- **Expresiones**: Calcula valores o resultados.
+- **Asignaciones**: Guarda valores en variables.
+- **Sentencias de control**: Ejecuta bloques de código según condiciones (`if`, `while`, `for`).
+- **Funciones**: Permite definir y llamar funciones, gestionando el alcance de variables.
+- **Impresión y salida**: Muestra resultados en pantalla.
+
+El entorno de ejecución mantiene el estado de todas las variables y funciones, simulando el comportamiento de Python real.
+
+### 4. **Gestión de errores**
+El intérprete detecta errores de sintaxis (estructura incorrecta) y de ejecución (por ejemplo, dividir por cero o acceder a una variable no definida). Informa al usuario con mensajes descriptivos para facilitar la corrección.
 
 ## Instalación
 
-Clona el repositorio y asegúrate de tener Python instalado (versión 3.7 o superior):
+No requiere módulos externos. Simplemente clona el repositorio y asegúrate de tener Python instalado (versión 3.7 o superior):
 
 ```bash
 git clone https://github.com/Jorgito091/InterpretePython.git
 cd InterpretePython
 ```
-
-Puedes instalar las dependencias (si las hay) usando:
-
-```bash
-pip install -r requirements.txt
-```
-
-> **Nota:** Si no existe el archivo `requirements.txt`, significa que no se requieren módulos externos.
 
 ## Uso
 
