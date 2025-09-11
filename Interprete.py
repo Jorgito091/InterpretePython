@@ -315,48 +315,32 @@ def run_interpreter():
         except EOFError:
             break
 
-# Ejemplo de uso
 if __name__ == "__main__":
-    # Crear intérprete
+    import sys
     interpreter = PythonInterpreter()
-    
-    # Ejemplos de código para probar
-    ejemplos = [
-        "x = 5",
-        "y = 10",
-        "print(x + y)",
-        "z = x * y",
-        "print('El resultado es:', z)",
-        """
-def factorial(n):
-    if n <= 1:
-        return 1
+
+    if len(sys.argv) > 1:
+        filename = sys.argv[1]
+        try:
+            with open(filename, 'r', encoding='utf-8') as f:
+                code = f.read()
+            print(f"Ejecutando archivo: {filename}\n" + "-"*30)
+            result = interpreter.interpret(code)
+            if result is not None:
+                print(f"Resultado: {result}")
+        except Exception as e:
+            print(f"Error al ejecutar el archivo: {e}")
     else:
-        return n * factorial(n - 1)
-""",
-        "print(factorial(5))",
-        """
-lista = [1, 2, 3, 4, 5]
-for i in lista:
-    print(i * 2)
-""",
-        """
-if z > 30:
-    print('z es mayor que 30')
-else:
-    print('z es menor o igual que 30')
-""",
-    ]
-    
-    print("=== Ejecutando ejemplos ===")
-    for i, codigo in enumerate(ejemplos, 1):
-        print(f"\nEjemplo {i}:")
-        print(f"Código: {codigo.strip()}")
-        print("Salida:")
-        result = interpreter.interpret(codigo)
-        if result is not None:
-            print(f"Resultado: {result}")
-    
-    print("\n" + "="*50)
-    print("Para usar el intérprete interactivo, ejecuta:")
-    print("run_interpreter()")
+        # Si no se pasa archivo, mostrar ejemplos o modo interactivo
+        print("=== Ejecutando ejemplos ===")
+        for i, codigo in enumerate(ejemplos, 1):
+            print(f"\nEjemplo {i}:")
+            print(f"Código: {codigo.strip()}")
+            print("Salida:")
+            result = interpreter.interpret(codigo)
+            if result is not None:
+                print(f"Resultado: {result}")
+
+        print("\n" + "="*50)
+        print("Para usar el intérprete interactivo, ejecuta:")
+        print("run_interpreter()")
