@@ -1,7 +1,7 @@
 # prueba.py
 
 # Asignaciones
-a = 10
+a = 9
 b = 5
 c = 2
 
@@ -11,7 +11,7 @@ resta = a - c
 multiplicacion = b * c
 division = a / c
 
-# Operaciones combinadas
+# Operaciones combinadas 
 resultado = (a + b) * c - (b / c)
 
 # Imprimir resultados

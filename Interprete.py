@@ -3,6 +3,39 @@ import operator
 import sys
 from typing import Any, Dict, List, Optional
 
+        # Lista de ejemplos de código
+ejemplos = [
+    # Operaciones básicas
+    "a = 10\nb = 5\na + b",
+    "x = 7\ny = 3\nx * y",
+            
+    # Uso de print
+    "print('Hola mundo')",
+            
+    # Listas y sumas
+    "numeros = [1,2,3,4,5]\nsum(numeros)",
+        
+    # Diccionarios
+    "persona = {'nombre': 'Jorge', 'edad': 25}\npersona['nombre']",
+            
+    # Condicionales
+    "x = 10\nif x > 5:\n    y = 'Mayor'\nelse:\n    y = 'Menor'\ny",
+            
+    # Bucles
+    "suma = 0\nfor i in range(5):\n    suma += i\nsuma",
+            
+    # Funciones
+    "def cuadrado(n):\n    return n * n\ncuadrado(6)",
+            
+    # Booleanos
+    "a = True\nb = False\na and b",
+            
+    # Comparaciones
+    "5 > 3 and 2 < 4",
+            
+    # Acceso a listas
+    "lista = [10, 20, 30]\nlista[1]"
+    ]
 class PythonInterpreter:
     def __init__(self):
         self.variables = {}
@@ -41,6 +74,7 @@ class PythonInterpreter:
             ast.BitXor: operator.xor,
             ast.BitAnd: operator.and_,
         }
+        
         
         # Operadores de comparación
         self.compare_ops = {
@@ -331,7 +365,7 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"Error al ejecutar el archivo: {e}")
     else:
-        # Si no se pasa archivo, mostrar ejemplos o modo interactivo
+        
         print("=== Ejecutando ejemplos ===")
         for i, codigo in enumerate(ejemplos, 1):
             print(f"\nEjemplo {i}:")
