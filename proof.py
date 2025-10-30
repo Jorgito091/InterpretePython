@@ -1,28 +1,39 @@
-# prueba.py
+global_var = "soy global"
 
-# Asignaciones
-a = 9
-b = 5
-c = 2
+def nivel_global():
+    x = "nivel_global"
 
-# Operaciones básicas
-suma = a + b
-resta = a - c
-multiplicacion = b * c
-division = a / c
+    def nivel_intermedio(a, b=2, factor=1):
+        y = "nivel_intermedio"
 
-# Operaciones combinadas 
-resultado = (a + b) * c - (b / c)
+        def nivel_interno(z):
+            nonlocal y
+            y = "modificado_en_interno"
+            total = (a + b + z) * factor
+            print("[nivel_interno] total:", total)
+            print("[nivel_interno] closure vars ->", x, y, global_var)
+            return total
 
-# Imprimir resultados
-print(suma)           # 15
-print(resta)          # 8
-print(multiplicacion) # 10
-print(division)       # 5.0
-print(resultado)      # 28.5
+        tupla = (1, 2, 3)
+        a1 = tupla[0]
+        lista = [4, 5, 6]
+        lista[1:3] = [7, 8]
+        print("[nivel_intermedio] a1:", a1)
+        print("[nivel_intermedio] lista modificada:", lista)
 
-# Reasignaciones
-a = suma + multiplicacion
-b = resta - c
-print(a)              # 25
-print(b)              # 6
+        class Objeto: pass
+        obj = Objeto()
+        setattr(obj, "dato", 42)
+        print("[nivel_intermedio] getattr(obj, 'dato') =", getattr(obj, "dato"))
+
+        datos = list(range(10))
+        print("[nivel_intermedio] datos[2:8:2] =", datos[2:8:2])
+
+        return nivel_interno(3)
+
+    return nivel_intermedio
+
+f = nivel_global()
+print("\n=== Prueba de parámetros ===")
+resultado = f(5, 2, 2)  # <-- factor pasado como posicional
+print("Resultado final:", resultado)
